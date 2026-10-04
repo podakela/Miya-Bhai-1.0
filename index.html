@@ -13,7 +13,7 @@
     font-family:"Arial Black","Segoe UI",Arial,sans-serif;color:#fff;
     -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
     touch-action:none;overscroll-behavior:none;}
-  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#000;}
   canvas{display:block;background:#000;
     box-shadow:0 0 90px rgba(255,120,0,.2), 0 0 200px rgba(255,60,0,.08);}
 
@@ -76,12 +76,13 @@
     background:radial-gradient(circle at 35% 30%,
       #e8faff, #6ac8ff 60%, #1a5a99);}
 
-  #rot-hint{display:none;position:fixed;inset:0;background:#050505;z-index:99;
+  #rot-hint{display:none;position:fixed;inset:0;background:rgba(5,5,5,0.85);z-index:99;
     align-items:center;justify-content:center;
     color:#ffb060;font-size:5vmin;text-align:center;letter-spacing:2px;
-    flex-direction:column;gap:3vmin;}
+    flex-direction:column;gap:3vmin;pointer-events:none;}
   #rot-hint span{font-size:14vmin;transform:rotate(90deg);display:inline-block;}
-  @media (max-aspect-ratio: 1/1){ #rot-hint{display:flex;} }
+  /* Only trigger on true phone-portrait (aspect ratio taller than 6:10) */
+  @media (max-aspect-ratio: 6/10){ #rot-hint{display:flex;} }
 </style>
 </head>
 <body>
@@ -246,12 +247,9 @@ const SFX = {
       case 'combo': this.tone(900,0.06,'square',0.18,t); this.tone(1400,0.06,'square',0.14,t+0.05); break;
       case 'fatality': this.tone(80,1.8,'sawtooth',0.45,t,32); this.tone(120,1.6,'sine',0.35,t,40);
         this.tone(240,1.2,'square',0.15,t,80); this.noise(1.5,0.4,'lowpass',700,120,t); break;
-      case 'type': this.tone(600+Math.random()*400, 0.02, 'square', 0.06, t); break;
-      case 'swoosh': this.noise(0.4, 0.28, 'bandpass', 400, 1800, t, 2.2);
-        this.tone(120, 0.5, 'sawtooth', 0.14, t, 640); break;
-      case 'portal': this.tone(200, 1.2, 'sine', 0.22, t, 1400);
-        this.tone(300, 1.0, 'sawtooth', 0.10, t, 2000);
-        this.noise(1.2, 0.20, 'bandpass', 300, 3000, t, 2); break;
+      case 'portal': this.tone(200,1.2,'sine',0.22,t,1400);
+        this.tone(300,1.0,'sawtooth',0.10,t,2000);
+        this.noise(1.2,0.20,'bandpass',300,3000,t,2); break;
       case 'cheer': [523,659,784].forEach((f,i)=> this.tone(f, 0.5, 'square', 0.20, t+i*0.05)); break;
     }
   }
@@ -452,13 +450,11 @@ function goFullscreen(){
   try{ if(screen.orientation && screen.orientation.lock)
        screen.orientation.lock('landscape').catch(()=>{}); }catch(e){}
 }
-/* canvas clicks (for roster cards) */
 function screenToCanvas(clientX, clientY){
   const r = cv.getBoundingClientRect();
-  return {
-    x:(clientX - r.left)/r.width * W,
-    y:(clientY - r.top)/r.height * H
-  };
+  const sx = (r.width>0) ? W/r.width : 1;
+  const sy = (r.height>0) ? H/r.height : 1;
+  return { x:(clientX - r.left)*sx, y:(clientY - r.top)*sy };
 }
 cv.addEventListener('pointerdown', e=>{
   firstInteract();
@@ -468,14 +464,19 @@ cv.addEventListener('pointerdown', e=>{
 window.addEventListener('pointerdown', ()=>firstInteract());
 
 function fit(){
-  const vw = window.innerWidth, vh = window.innerHeight;
-  const s = Math.min(vw/W, vh/H);
-  cv.style.width = Math.floor(W*s)+'px';
-  cv.style.height = Math.floor(H*s)+'px';
+  const vw = window.innerWidth || 1280;
+  const vh = window.innerHeight || 720;
+  let s = Math.min(vw/W, vh/H);
+  if(!s || s <= 0 || !isFinite(s)) s = 1;
+  cv.style.width  = Math.max(320, Math.floor(W*s)) + 'px';
+  cv.style.height = Math.max(180, Math.floor(H*s)) + 'px';
 }
 window.addEventListener('resize', fit);
-window.addEventListener('orientationchange', ()=>setTimeout(fit,250));
+window.addEventListener('orientationchange', ()=>setTimeout(fit,300));
+window.addEventListener('load', fit);
 fit();
+requestAnimationFrame(fit);
+setTimeout(fit, 200);
 
 if(('ontouchstart' in window) || navigator.maxTouchPoints>0){
   document.getElementById('touch').style.display='block';
@@ -621,8 +622,7 @@ const game = {
   victoryTimer:0,
   cardIndex:-1,
   rosterRectCache:[],
-  backRect:null,
-  clickQueue:[]
+  backRect:null
 };
 let shake=0, shakeX=0, shakeY=0;
 const camera = { zoom:1, targetZoom:1 };
@@ -1038,7 +1038,6 @@ function bodyBox(f){
   return { x: f.x-28*k, y: f.y-226*k, w: 56*k, h: 226*k };
 }
 
-/* projectiles */
 function spawnProj(o){
   o.t=0; o.dead=false; o.hits=new Set();
   if(o.w===undefined) o.w=30; if(o.h===undefined) o.h=30;
@@ -1071,7 +1070,7 @@ function updateProjectiles(dt){
 }
 
 /* =====================================================================
-   CHARACTER RENDERING — HD
+   CHARACTER RENDERING
    ===================================================================== */
 function limbGrad(g, color, x0, x1){
   const grd = g.createLinearGradient(x0, 0, x1, 0);
@@ -1182,7 +1181,6 @@ function drawFighter(g, f, opts){
   g.strokeStyle = tg; g.lineWidth = torsoW;
   g.beginPath(); g.moveTo(P.pelvis[0],P.pelvis[1]); g.lineTo(P.chest[0],P.chest[1]); g.stroke();
 
-  // muscles
   g.strokeStyle = shade(pal.shirtDk, -20); g.lineWidth = 1.6;
   g.beginPath();
   g.moveTo(P.chest[0]-10, P.chest[1]+4);
@@ -1240,11 +1238,9 @@ function drawHead(g, f, P){
   g.fillStyle = hg;
   g.beginPath(); g.arc(hx, hy, r, 0, 7); g.fill();
 
-  // ear
   g.fillStyle = pal.skinDk;
   g.beginPath(); g.ellipse(hx-r*0.85, hy+r*0.05, r*0.24, r*0.34, 0,0,7); g.fill();
 
-  // nose
   g.fillStyle = shade(pal.skinDk, -10);
   g.beginPath();
   g.moveTo(hx+r*0.78, hy-r*0.05);
@@ -1252,7 +1248,6 @@ function drawHead(g, f, P){
   g.lineTo(hx+r*0.75, hy+r*0.3);
   g.closePath(); g.fill();
 
-  // beard
   const bg = g.createLinearGradient(hx, hy+r*0.2, hx, hy+r*1.3);
   bg.addColorStop(0, pal.hairLt); bg.addColorStop(1, pal.hair);
   g.fillStyle = bg;
@@ -1265,7 +1260,6 @@ function drawHead(g, f, P){
     g.stroke();
   }
 
-  // eyebrows
   g.strokeStyle = pal.hair; g.lineWidth = 2.6; g.lineCap='round';
   g.beginPath();
   g.moveTo(hx + r*0.10, hy - r*0.42); g.lineTo(hx + r*0.68, hy - r*0.36);
@@ -1274,7 +1268,6 @@ function drawHead(g, f, P){
   g.moveTo(hx - r*0.14, hy - r*0.40); g.lineTo(hx + r*0.28, hy - r*0.44);
   g.stroke();
 
-  // eyes
   const blink = Math.sin(f.animT*1.9) > 0.985;
   if(!blink){
     g.fillStyle = '#f4efe6';
@@ -1292,14 +1285,12 @@ function drawHead(g, f, P){
     g.beginPath(); g.moveTo(hx-r*0.20, hy-r*0.14); g.lineTo(hx+r*0.22, hy-r*0.14); g.stroke();
   }
 
-  // mouth
   g.strokeStyle = shade(pal.hair, +10); g.lineWidth = 1.6;
   g.beginPath();
   g.moveTo(hx-r*0.15, hy+r*0.34);
   g.quadraticCurveTo(hx, hy+r*0.4, hx+r*0.15, hy+r*0.34);
   g.stroke();
 
-  // devil features
   if(f.outfit==='devil'){
     g.fillStyle = '#e8dcc0';
     g.strokeStyle = '#5a3010'; g.lineWidth = 1.5;
@@ -1323,15 +1314,13 @@ function drawHead(g, f, P){
     g.beginPath(); g.arc(hx+r*0.04, hy-r*0.14, r*0.14, 0, 7); g.fill();
   }
 
-  // MIYA BHAI — Islamic white cap (kufi/topi, no brim, rounded dome)
+  // MIYA BHAI — Islamic white cap (kufi, rounded dome, no brim)
   if(f.outfit==='miya'){
-    // shadow under cap
     g.fillStyle = shade(pal.cap, -70);
     g.beginPath();
     g.arc(hx, hy - r*0.20, r*1.0, Math.PI*1.0, Math.PI*2.0);
     g.fill();
     g.fillRect(hx - r*1.0, hy - r*0.26, r*2.0, r*0.10);
-    // main dome
     const capGrd = g.createLinearGradient(hx, hy-r*1.3, hx, hy);
     capGrd.addColorStop(0, pal.cap);
     capGrd.addColorStop(0.6, shade(pal.cap, -8));
@@ -1340,14 +1329,12 @@ function drawHead(g, f, P){
     g.beginPath();
     g.arc(hx, hy - r*0.20, r*0.98, Math.PI*1.02, Math.PI*1.98);
     g.fill();
-    // band at bottom edge
     g.fillStyle = shade(pal.cap, -20);
     g.fillRect(hx - r*0.98, hy - r*0.26, r*1.96, r*0.13);
     g.strokeStyle = shade(pal.cap, -45); g.lineWidth = 1.4;
     g.beginPath();
     g.moveTo(hx - r*0.98, hy - r*0.14); g.lineTo(hx + r*0.98, hy - r*0.14);
     g.stroke();
-    // subtle stitched lines on cap
     g.strokeStyle = shade(pal.cap, -18); g.lineWidth = 1;
     for(let i=-2;i<=2;i++){
       g.beginPath();
@@ -1561,7 +1548,6 @@ function drawOutfitFront(g, f, P){
     g.beginPath(); g.arc(P.pelvis[0], P.pelvis[1], 5.5, 0, 7); g.fill();
   }
   if(f.outfit==='miya'){
-    // small silver pendant
     g.strokeStyle = '#c8c8c8'; g.lineWidth = 2;
     g.beginPath(); g.arc(P.chest[0], P.chest[1]+14, 8, 0, 7); g.stroke();
     g.fillStyle = '#c8c8c8';
@@ -2117,7 +2103,7 @@ function getHeroPreview(){
 }
 
 /* =====================================================================
-   STORY / CHAPTER DATA
+   STORY DATA
    ===================================================================== */
 const STORY_SUMMARY = [
   "MIYA BHAI — NO ONE CAN ESCAPE",
@@ -2190,10 +2176,7 @@ function enterStoryLevel(idx){
   Music.start('cutscene');
   SFX.play('portal');
 }
-function enterDialogue(){
-  game.state='dialogue'; game.stateT=0;
-  Music.start('cutscene'); SFX.play('announce');
-}
+function enterDialogue(){ game.state='dialogue'; game.stateT=0; Music.start('cutscene'); SFX.play('announce'); }
 function enterIntro(){ game.state='intro'; game.stateT=0; }
 function beginFight(){
   game.state='fight'; game.stateT=0;
@@ -2202,15 +2185,6 @@ function beginFight(){
   game.wins=[0,0]; game.round=1;
   const vdef = VILLAINS[game.level];
   Music.start(vdef.id==='iblees'?'hell':(Math.random()<0.5?'fight':'fight2'));
-}
-function resetRound(){
-  const p=game.player, e=game.enemy;
-  p.reset(380,1); e.reset(900,-1);
-  p.foe=e; e.foe=p;
-  game.projectiles=[];
-  game.roundTime=ROUND_TIME;
-  game.phase='ready'; game.phaseT=0;
-  game.comboCount=0; game.comboTimer=0;
 }
 function onKO(){
   const p=game.player, e=game.enemy;
@@ -2263,39 +2237,31 @@ function update(dt){
 }
 function updateLogo(dt){
   if(tapped('confirm')||tapped('punch')||tapped('special')){
-    SFX.play('confirm');
-    enterStory();
+    SFX.play('confirm'); enterStory();
   }
 }
 function updateStory(dt){
   if(game.stateT > 0.8 && (tapped('confirm')||tapped('punch')||tapped('special'))){
-    SFX.play('confirm');
-    enterRoster();
+    SFX.play('confirm'); enterRoster();
   }
 }
 function updateRoster(dt){
   if(tapped('confirm')||tapped('punch')||tapped('special')){
-    SFX.play('confirm');
-    enterStoryLevel(0);
+    SFX.play('confirm'); enterStoryLevel(0);
   }
   if(tapped('back')){ game.state='logo'; game.stateT=0; Music.start('title'); }
 }
 function updateCardDetail(dt){
-  if(tapped('back') || tapped('confirm') || tapped('punch')){
-    backToRoster();
-  }
-  // click outside handled by canvas click
+  if(tapped('back') || tapped('confirm') || tapped('punch')) backToRoster();
 }
 function updateChapter(dt){
   if(game.stateT > 1.2 && (tapped('confirm')||tapped('punch')||tapped('special'))){
-    SFX.play('confirm');
-    enterDialogue();
+    SFX.play('confirm'); enterDialogue();
   }
 }
 function updateDialogue(dt){
   if(game.stateT > 0.8 && (tapped('confirm')||tapped('punch')||tapped('special'))){
-    SFX.play('confirm');
-    enterIntro();
+    SFX.play('confirm'); enterIntro();
   }
 }
 function updateIntro(dt){
@@ -2483,13 +2449,12 @@ function updateGameOver(dt){
   }
 }
 function updateEnding(dt){
-  if(game.stateT > 1.0 && (tapped('confirm')||tapped('punch')||tapped('special'))){
+  if(game.stateT > 3.0 && (tapped('confirm')||tapped('punch')||tapped('special'))){
     game.state='logo'; game.stateT=0;
     game.score=0; game.level=0;
     Music.start('title');
   }
 }
-function updateEndingHelper(dt){}
 
 /* ---------- AI ---------- */
 function aiThink(me, foe, dt){
@@ -2550,16 +2515,40 @@ function roundRect(g,x,y,w,h,r){
   g.arcTo(x,y,x+w,y,r);
   g.closePath();
 }
+function wrapText(g, text, x, y, maxW, lh){
+  const words = text.split(' ');
+  let line = '', yy = y;
+  for(let i=0;i<words.length;i++){
+    const test = line + words[i] + ' ';
+    if(g.measureText(test).width > maxW && line.length){
+      g.fillText(line.trim(), x, yy);
+      line = words[i] + ' ';
+      yy += lh;
+    } else line = test;
+  }
+  g.fillText(line.trim(), x, yy);
+}
+function wrapTextRight(g, text, x, y, maxW, lh){
+  const words = text.split(' ');
+  let line = '', yy = y;
+  for(let i=0;i<words.length;i++){
+    const test = line + words[i] + ' ';
+    if(g.measureText(test).width > maxW && line.length){
+      g.fillText(line.trim(), x, yy);
+      line = words[i] + ' ';
+      yy += lh;
+    } else line = test;
+  }
+  g.fillText(line.trim(), x, yy);
+}
 
 function render(){
   ctx.setTransform(1,0,0,1,0,0);
   ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H);
-
   ctx.save();
   ctx.translate(W/2+shakeX, H/2+shakeY);
   ctx.scale(camera.zoom, camera.zoom);
   ctx.translate(-W/2, -H/2);
-
   switch(game.state){
     case 'logo':      renderLogo(); break;
     case 'story':     renderStory(); break;
@@ -2576,7 +2565,6 @@ function render(){
     case 'ending':    renderEnding(); break;
   }
   ctx.restore();
-
   if(game.damageFlash>0){
     ctx.fillStyle='rgba(255,60,30,'+(game.damageFlash*0.4)+')';
     ctx.fillRect(0,0,W,H);
@@ -2592,7 +2580,6 @@ function render(){
   ctx.fillStyle = vg; ctx.fillRect(0,0,W,H);
 }
 
-/* ---------- LOGO ---------- */
 function renderLogo(){
   const t = game.t;
   const g = ctx.createLinearGradient(0,0,0,H);
@@ -2609,8 +2596,6 @@ function renderLogo(){
   gg.addColorStop(0,'rgba(255,120,20,0.35)');
   gg.addColorStop(1,'rgba(255,60,0,0)');
   ctx.fillStyle = gg; ctx.fillRect(0, H-360, W, 360);
-
-  // spinning emblem
   ctx.save();
   ctx.translate(W/2, 340); ctx.rotate(t*0.35);
   ctx.strokeStyle = 'rgba(255,140,30,0.35)'; ctx.lineWidth = 4;
@@ -2620,7 +2605,6 @@ function renderLogo(){
     ctx.stroke();
   }
   ctx.restore();
-
   const pulse = 1 + Math.sin(t*2.4)*0.018;
   ctx.save();
   ctx.translate(W/2, 280); ctx.scale(pulse, pulse);
@@ -2629,7 +2613,6 @@ function renderLogo(){
   bigText('MIYA  BHAI', 0, -40, 118, ['#ffe08a','#ff8a1a'], 1, 1, '#2a0800');
   ctx.shadowBlur = 0;
   ctx.restore();
-
   ctx.save();
   ctx.globalAlpha = 0.9;
   ctx.font = '900 34px "Arial Black", Arial, sans-serif';
@@ -2637,11 +2620,9 @@ function renderLogo(){
   ctx.fillStyle = '#ffb060';
   ctx.fillText('NO ONE CAN ESCAPE', W/2, 400);
   ctx.restore();
-
   const blink = 0.45 + Math.abs(Math.sin(t*3))*0.55;
   bigText('PRESS  ENTER  /  TAP  TO  BEGIN', W/2, 560, 30,
           ['#ffffff','#ffcf80'], blink, 1, '#000');
-
   if(game.best > 0){
     ctx.save();
     ctx.globalAlpha = 0.85;
@@ -2653,14 +2634,11 @@ function renderLogo(){
   }
 }
 
-/* ---------- STORY SUMMARY ---------- */
 function renderStory(){
   const t = game.t;
   const g = ctx.createLinearGradient(0,0,0,H);
   g.addColorStop(0,'#0a0610'); g.addColorStop(0.5,'#1a1020'); g.addColorStop(1,'#0a0408');
   ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
-
-  // starfield
   for(let i=0;i<80;i++){
     const sx = (i*137 + t*8*(0.3+(i%4)*0.3)) % W;
     const sy = (i*61 + Math.sin(t*0.3+i)*20) % (H-100);
@@ -2668,22 +2646,15 @@ function renderStory(){
     ctx.fillStyle = 'rgba(200,220,255,'+clamp(a,0,0.8)+')';
     ctx.beginPath(); ctx.arc(sx, sy, 0.8+(i%3)*0.4, 0, 7); ctx.fill();
   }
-
-  // title
   bigText('THE STORY', W/2, 60, 40, ['#ffe9a0','#c88a20'], 1, 1, '#000');
-
-  // story text — scroll reveal
   ctx.save();
   ctx.textAlign = 'center';
-  ctx.font = '600 17px "Arial", sans-serif';
   const lines = STORY_SUMMARY;
   const revealCount = Math.min(lines.length, Math.floor(game.stateT * 3.5));
   const baseY = 130;
   for(let i=0;i<revealCount && i<lines.length;i++){
     const line = lines[i];
-    if(line === ''){
-      continue;
-    }
+    if(line === '') continue;
     if(line === 'MIYA BHAI — NO ONE CAN ESCAPE'){
       ctx.save();
       ctx.font = '900 26px "Arial Black", Arial, sans-serif';
@@ -2699,7 +2670,6 @@ function renderStory(){
     ctx.fillText(line, W/2, baseY + i*26);
   }
   ctx.restore();
-
   if(game.stateT > 0.8){
     const blink = 0.5 + Math.abs(Math.sin(t*3))*0.5;
     bigText('PRESS  ENTER  TO  CONTINUE', W/2, H-30, 20,
@@ -2707,11 +2677,9 @@ function renderStory(){
   }
 }
 
-/* ---------- ROSTER (clickable cards, faces) ---------- */
 function renderRoster(){
   const t = game.t;
   game.rosterRectCache = [];
-
   const g = ctx.createLinearGradient(0,0,0,H);
   g.addColorStop(0,'#0b0714'); g.addColorStop(0.6,'#1a0f22'); g.addColorStop(1,'#2b1220');
   ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
@@ -2728,7 +2696,6 @@ function renderRoster(){
   ctx.fillText('TAP ANY CARD FOR DETAILS  ·  PRESS ENTER TO BEGIN STORY MODE', W/2, 72);
   ctx.restore();
 
-  // build cards
   const cols = 3, rows = 3;
   const cw = 340, ch = 180, gapX = 24, gapY = 24;
   const startX = (W - (cols*cw + (cols-1)*gapX))/2;
@@ -2750,11 +2717,8 @@ function renderRoster(){
       fighter = pv;
       name = VILLAINS[idx].name; title = VILLAINS[idx].title;
     }
-
-    // store click rect
     game.rosterRectCache.push({ x:x, y:y, w:cw, h:ch, index:i });
 
-    // card bg
     const bg = ctx.createLinearGradient(x,y,x,y+ch);
     bg.addColorStop(0,'rgba(30,20,40,0.92)');
     bg.addColorStop(1,'rgba(14,10,20,0.92)');
@@ -2764,14 +2728,12 @@ function renderRoster(){
     ctx.lineWidth = 2.4;
     roundRect(ctx, x, y, cw, ch, 12); ctx.stroke();
 
-    // FACE — zoom in on head, clipped to left square of card
     const faceX = x + 6, faceY = y + 6;
     const faceW = 170, faceH = ch - 12;
     ctx.save();
     ctx.beginPath();
     roundRect(ctx, faceX, faceY, faceW, faceH, 8);
     ctx.clip();
-    // dark gradient behind face
     const faceBg = ctx.createRadialGradient(faceX+faceW/2, faceY+faceH*0.4, 10,
       faceX+faceW/2, faceY+faceH*0.5, faceH*0.9);
     faceBg.addColorStop(0, i===0?'rgba(60,90,140,0.55)':'rgba(120,60,20,0.55)');
@@ -2779,7 +2741,6 @@ function renderRoster(){
     ctx.fillStyle = faceBg;
     ctx.fillRect(faceX, faceY, faceW, faceH);
 
-    // render fighter zoomed to head
     const s = fighter.s;
     const headWorldX = fighter.x + fighter.facing * s * 1;
     const headWorldY = fighter.y + s * (-126);
@@ -2790,7 +2751,6 @@ function renderRoster(){
     drawFighter(ctx, fighter, {skipShadow:true});
     ctx.restore();
 
-    // text side
     const tx = x + faceW + 22;
     ctx.save();
     ctx.textAlign = 'left';
@@ -2800,13 +2760,11 @@ function renderRoster(){
     const shortName = name.length > 18 ? name.slice(0,17)+'…' : name;
     ctx.strokeText(shortName, tx, y + 60);
     ctx.fillText(shortName, tx, y + 60);
-
     ctx.font = '600 11px Arial, sans-serif';
     ctx.fillStyle = i===0 ? '#9fc0e8' : '#c89050';
     ctx.fillText(title, tx, y + 80);
     ctx.restore();
 
-    // level badge (for villains)
     if(i>0){
       ctx.save();
       ctx.fillStyle = '#a04010';
@@ -2818,11 +2776,9 @@ function renderRoster(){
       ctx.restore();
     }
   }
-
   if(tapped('back')){ game.state='logo'; game.stateT=0; Music.start('title'); }
 }
 
-/* ---------- CARD DETAIL ---------- */
 function renderCardDetail(){
   const idx = game.cardIndex;
   let fighter, name, title, bio, isHero;
@@ -2837,7 +2793,6 @@ function renderCardDetail(){
     name = VILLAINS[vi].name; title = VILLAINS[vi].title;
     bio = VILLAINS[vi].bio; isHero = false;
   }
-
   const t = game.t;
   const g = ctx.createLinearGradient(0,0,0,H);
   if(isHero){
@@ -2847,7 +2802,6 @@ function renderCardDetail(){
   }
   ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
 
-  // moving lines
   ctx.save();
   ctx.globalAlpha = 0.08;
   ctx.strokeStyle = isHero ? '#6fa8ff' : '#ff8030';
@@ -2858,7 +2812,6 @@ function renderCardDetail(){
   }
   ctx.restore();
 
-  // LEFT: full body big
   ctx.save();
   ctx.beginPath(); roundRect(ctx, 40, 110, 460, 540, 16); ctx.clip();
   const panelGrad = ctx.createRadialGradient(270, 380, 40, 270, 380, 380);
@@ -2866,7 +2819,6 @@ function renderCardDetail(){
   panelGrad.addColorStop(1, 'rgba(0,0,0,0.3)');
   ctx.fillStyle = panelGrad;
   ctx.fillRect(40, 110, 460, 540);
-
   ctx.save();
   ctx.translate(270, 640);
   const scale = 2.1;
@@ -2879,30 +2831,26 @@ function renderCardDetail(){
   ctx.lineWidth = 3;
   roundRect(ctx, 40, 110, 460, 540, 16); ctx.stroke();
 
-  // RIGHT: name, title, bio
-  ctx.save();
-  ctx.textAlign = 'left';
   bigText(name, 530, 160, 44, isHero?['#ffffff','#9fc8ff']:['#ffd070','#e04a10'], 1, 1, '#000');
+  ctx.save();
   ctx.font = '700 20px Arial, sans-serif';
+  ctx.textAlign = 'left';
   ctx.fillStyle = isHero ? '#8fb8e8' : '#c89060';
   ctx.fillText(title, 532, 205);
   ctx.restore();
 
-  // bio panel
   ctx.save();
   ctx.fillStyle = 'rgba(0,0,0,0.5)';
   roundRect(ctx, 520, 240, 720, 260, 12); ctx.fill();
   ctx.strokeStyle = isHero ? 'rgba(110,168,255,0.6)' : 'rgba(200,128,48,0.6)';
   ctx.lineWidth = 2;
   roundRect(ctx, 520, 240, 720, 260, 12); ctx.stroke();
-
   ctx.font = '600 18px Arial, sans-serif';
   ctx.fillStyle = '#e8dcc0';
   ctx.textAlign = 'left';
   wrapText(ctx, bio, 540, 270, 680, 28);
   ctx.restore();
 
-  // stats bars
   if(!isHero){
     const vi = idx - 1;
     const v = VILLAINS[vi];
@@ -2915,7 +2863,6 @@ function renderCardDetail(){
     drawStatBar(540, 620, 'VITALITY', MIYA.hp/170, '#a8ffd0');
   }
 
-  // back button
   const backX = 40, backY = 40, backW = 200, backH = 54;
   game.backRect = { x:backX, y:backY, w:backW, h:backH };
   ctx.save();
@@ -2953,16 +2900,11 @@ function drawStatBar(x, y, label, pct, color){
   ctx.restore();
 }
 
-/* ---------- CHAPTER CARD ---------- */
 function renderChapter(){
   const t = game.stateT;
-  const vdef = VILLAINS[game.level];
-
   const g = ctx.createLinearGradient(0,0,0,H);
   g.addColorStop(0,'#0a0610'); g.addColorStop(0.5,'#1a0c18'); g.addColorStop(1,'#0a0408');
   ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
-
-  // portal effect background
   const cx = W/2, cy = H/2;
   const rotate = t*0.6;
   for(let i=0;i<5;i++){
@@ -2976,8 +2918,6 @@ function renderChapter(){
     ctx.stroke();
     ctx.restore();
   }
-
-  // particles
   for(let i=0;i<60;i++){
     const a = (i/60)*Math.PI*2 + t*0.8;
     const r = 180 + Math.sin(t*2+i)*40;
@@ -2986,13 +2926,9 @@ function renderChapter(){
     ctx.fillStyle = 'rgba(190,140,255,'+(0.4+Math.sin(t*3+i)*0.3)+')';
     ctx.beginPath(); ctx.arc(px, py, 1.5+(i%3), 0, 7); ctx.fill();
   }
-
-  // level banner
   bigText('CHAPTER ' + (game.level+1), W/2, 130, 34, ['#ffe9a0','#c88a20'], 1, 1, '#000');
   bigText(CHAPTER_INTROS[game.level], W/2, 190, 30,
           ['#ffffff','#a080d0'], Math.min(1, t*2), 1, '#000');
-
-  // story line
   if(t > 0.8){
     const story = LEVEL_STORY_LINES[game.level];
     const alpha = Math.min(1, (t-0.8)*1.5);
@@ -3005,7 +2941,6 @@ function renderChapter(){
     ctx.strokeStyle = 'rgba(200,140,255,0.7)';
     ctx.lineWidth = 2;
     roundRect(ctx, bx, by, boxW, boxH, 12); ctx.stroke();
-
     ctx.font = '900 15px "Arial Black", sans-serif';
     ctx.fillStyle = '#ffb060';
     ctx.textAlign = 'left';
@@ -3015,7 +2950,6 @@ function renderChapter(){
     wrapText(ctx, story.line, bx+24, by+56, boxW-48, 24);
     ctx.restore();
   }
-
   if(t > 1.2){
     const blink = 0.5 + Math.abs(Math.sin(game.t*3))*0.5;
     bigText('PRESS  ENTER  TO  CONTINUE', W/2, H-50, 22,
@@ -3023,15 +2957,12 @@ function renderChapter(){
   }
 }
 
-/* ---------- DIALOGUE ---------- */
 function renderDialogue(){
   const t = game.t;
   const vdef = VILLAINS[game.level];
-
   const g = ctx.createLinearGradient(0,0,0,H);
   g.addColorStop(0,'#140608'); g.addColorStop(0.5,'#2a0d10'); g.addColorStop(1,'#0a0406');
   ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
-
   ctx.save();
   ctx.globalAlpha = 0.15;
   ctx.strokeStyle = '#ff8030'; ctx.lineWidth = 3;
@@ -3040,13 +2971,9 @@ function renderDialogue(){
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y+60); ctx.stroke();
   }
   ctx.restore();
-
   bigText('CHAPTER ' + (game.level+1), W/2, 50, 26, ['#ffe9a0','#e08a20'], 1, 1, '#000');
   bigText(CHAPTER_INTROS[game.level], W/2, 84, 20, ['#c89060','#8a5020'], 1, 1, '#000');
-
-  // hero portrait
   const hp = getHeroPreview();
-  hp.animT += 0.016; hp.clothT += 0.016; hp.pose = computePose(hp);
   const heroCx = 260, heroScale = 2.4;
   ctx.save();
   ctx.translate(heroCx, GROUND+90);
@@ -3054,8 +2981,6 @@ function renderDialogue(){
   ctx.translate(-hp.x, -hp.y);
   drawFighter(ctx, hp, {skipShadow:true});
   ctx.restore();
-
-  // villain portrait
   const vp = PREVIEWS[game.level];
   vp.animT += 0.016; vp.clothT += 0.016; vp.facing = -1;
   vp.pose = computePose(vp);
@@ -3066,19 +2991,13 @@ function renderDialogue(){
   ctx.translate(-vp.x, -vp.y);
   drawFighter(ctx, vp, {skipShadow:true});
   ctx.restore();
-
   panelText(MIYA.name, heroCx, 150, 26, '#cfe6ff');
   panelText(VILLAINS[game.level].name, vCx, 150, 26, '#ffd070');
-
   const vsPulse = 1 + Math.sin(t*4)*0.04;
   bigText('VS', W/2, 370, 80, ['#ffe9a0','#e04020'], 1, vsPulse, '#3a0000');
-
-  // dialogue boxes
   const boxW = 480, boxH = 110;
   const heroBoxX = W/2 - 500, heroBoxY = H - 145;
   const vBoxX    = W/2 + 20,  vBoxY    = H - 145;
-
-  // hero box
   ctx.save();
   ctx.fillStyle = 'rgba(10,20,50,0.88)';
   roundRect(ctx, heroBoxX, heroBoxY, boxW, boxH, 10); ctx.fill();
@@ -3089,8 +3008,6 @@ function renderDialogue(){
   ctx.textAlign = 'left'; ctx.textBaseline = 'top';
   wrapText(ctx, '"'+vdef.playerLine+'"', heroBoxX+18, heroBoxY+22, boxW-36, 24);
   ctx.restore();
-
-  // villain box
   ctx.save();
   ctx.fillStyle = 'rgba(50,10,10,0.88)';
   roundRect(ctx, vBoxX, vBoxY, boxW, boxH, 10); ctx.fill();
@@ -3101,53 +3018,23 @@ function renderDialogue(){
   ctx.textAlign = 'right'; ctx.textBaseline = 'top';
   wrapTextRight(ctx, '"'+vdef.intro+'"', vBoxX+boxW-18, vBoxY+22, boxW-36, 24);
   ctx.restore();
-
   if(game.stateT > 0.8){
     const blink = 0.5 + Math.abs(Math.sin(t*3.5))*0.5;
     bigText('PRESS  ENTER  TO  FIGHT', W/2, H-20, 20,
             ['#ffffff','#ffcf80'], blink, 1, '#000');
   }
 }
-function wrapText(g, text, x, y, maxW, lh){
-  const words = text.split(' ');
-  let line = '', yy = y;
-  for(let i=0;i<words.length;i++){
-    const test = line + words[i] + ' ';
-    if(g.measureText(test).width > maxW && line.length){
-      g.fillText(line.trim(), x, yy);
-      line = words[i] + ' ';
-      yy += lh;
-    } else line = test;
-  }
-  g.fillText(line.trim(), x, yy);
-}
-function wrapTextRight(g, text, x, y, maxW, lh){
-  const words = text.split(' ');
-  let line = '', yy = y;
-  for(let i=0;i<words.length;i++){
-    const test = line + words[i] + ' ';
-    if(g.measureText(test).width > maxW && line.length){
-      g.fillText(line.trim(), x, yy);
-      line = words[i] + ' ';
-      yy += lh;
-    } else line = test;
-  }
-  g.fillText(line.trim(), x, yy);
-}
 
-/* ---------- INTRO ---------- */
 function renderIntro(){
   const t = game.stateT;
   const vdef = VILLAINS[game.level];
   drawStage(vdef.stage, game.t);
-
   ctx.save();
   const lbH = lerp(0, 110, clamp(t*1.5, 0, 1));
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, W, lbH);
   ctx.fillRect(0, H-lbH, W, lbH);
   ctx.restore();
-
   const heroAppear = clamp((t-0.4)*1.5, 0, 1);
   if(heroAppear > 0){
     const p = game.player;
@@ -3171,14 +3058,12 @@ function renderIntro(){
     }
   }
   Particles.draw(ctx);
-
   bigText('CHAPTER ' + (game.level+1), W/2, 150, 56, ['#ffe9a0','#e08a20'],
           clamp((t-0.2)*2,0,1), 1, '#000');
   bigText(CHAPTER_INTROS[game.level], W/2, 200, 26, ['#ffffff','#c89060'],
           clamp((t-0.6)*2,0,1), 1, '#000');
   panelText(VILLAINS[game.level].name, 950, 560, 30, '#ffb060');
   panelText(VILLAINS[game.level].title, 950, 590, 16, '#c89060');
-
   if(t > 3.6){
     const ff = clamp((t-3.6)*4, 0, 1);
     const fs = 1 + Math.max(0, 1-(t-3.6)*3)*1.4;
@@ -3195,7 +3080,6 @@ function renderIntro(){
   }
 }
 
-/* ---------- FIGHT ---------- */
 function renderFight(){
   const p = game.player, e = game.enemy;
   if(!p||!e) return;
@@ -3205,7 +3089,6 @@ function renderFight(){
   for(let i=0;i<game.projectiles.length;i++) drawProjectile(ctx, game.projectiles[i]);
   Particles.draw(ctx);
   drawHUD();
-
   if(game.announce && game.phase !== 'active'){
     let a = 1, sc = 1;
     if(game.phase==='ready'){
@@ -3257,7 +3140,6 @@ function drawHUD(){
   ctx.strokeText(e.name, W-44, y+barH+26);
   ctx.fillText(e.name, W-44, y+barH+26);
   ctx.restore();
-
   ctx.save();
   ctx.font = '900 15px "Arial Black", Arial, sans-serif';
   ctx.textAlign = 'center';
@@ -3266,7 +3148,6 @@ function drawHUD(){
   ctx.strokeText('CHAPTER ' + (game.level+1) + ' / 8', W/2, y+barH+48);
   ctx.fillText('CHAPTER ' + (game.level+1) + ' / 8', W/2, y+barH+48);
   ctx.restore();
-
   const timeLeft = Math.ceil(game.roundTime);
   const pulse = timeLeft<=10 ? 1+Math.sin(game.t*10)*0.08 : 1;
   ctx.save();
@@ -3275,7 +3156,6 @@ function drawHUD(){
   bigText(String(timeLeft).padStart(2,'0'), 0, 0, 62,
           timeLeft<=10?['#ff9a60','#e02000']:['#ffe9a0','#e0a020'], 1, 1, '#000');
   ctx.restore();
-
   for(let i=0;i<ROUNDS_TO_WIN;i++){
     const px = 40+barW+22+i*26;
     ctx.beginPath(); ctx.arc(px, y+barH/2, 10, 0, 7);
@@ -3298,7 +3178,6 @@ function drawHUD(){
     ctx.fill();
     ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 2; ctx.stroke();
   }
-
   ctx.save();
   ctx.font = '900 20px "Arial Black", Arial, sans-serif';
   ctx.textAlign = 'left';
@@ -3307,7 +3186,6 @@ function drawHUD(){
   ctx.strokeText('SCORE  ' + game.score, 44, H-26);
   ctx.fillText('SCORE  ' + game.score, 44, H-26);
   ctx.restore();
-
   const cd = game.player.specialCd;
   const ready = cd <= 0;
   ctx.save();
@@ -3341,7 +3219,6 @@ function drawBar(x, y, w, h, pct, isPlayer){
   ctx.restore();
 }
 
-/* ---------- FATALITY ---------- */
 function renderFatality(){
   const p = game.player, e = game.enemy;
   if(!p||!e) return;
@@ -3351,7 +3228,6 @@ function renderFatality(){
   for(let i=0;i<game.projectiles.length;i++) drawProjectile(ctx, game.projectiles[i]);
   Particles.draw(ctx);
   drawHUD();
-
   if(!game.fatalityActive){
     const blink = 0.5 + Math.abs(Math.sin(game.t*6))*0.5;
     const shakeAmt = Math.max(0, 1-game.fatalityTimer/3.2);
@@ -3396,7 +3272,6 @@ function renderFatality(){
   }
 }
 
-/* ---------- VICTORY ---------- */
 function renderVictory(){
   const p = game.player, e = game.enemy;
   const vdef = VILLAINS[game.level];
@@ -3412,7 +3287,6 @@ function renderVictory(){
     drawFighter(ctx, p);
   }
   Particles.draw(ctx);
-
   const t = game.victoryTimer;
   const sc = 1 + Math.max(0, 1-t*2.4)*0.7;
   bigText('VICTORY', W/2, 150, 100, ['#fff0a0','#ffb020'], Math.min(1,t*2), sc, '#300000');
@@ -3426,7 +3300,6 @@ function renderVictory(){
   ctx.strokeText('SCORE: ' + game.score, W/2, 290);
   ctx.fillText('SCORE: ' + game.score, W/2, 290);
   ctx.restore();
-
   if(t > 1.2){
     const blink = 0.5 + Math.abs(Math.sin(game.t*3))*0.5;
     const isLast = (game.level + 1 >= VILLAINS.length);
@@ -3435,7 +3308,6 @@ function renderVictory(){
   }
 }
 
-/* ---------- DEFEAT ---------- */
 function renderDefeat(){
   const e = game.enemy;
   const p = game.player;
@@ -3467,7 +3339,6 @@ function renderDefeat(){
   }
 }
 
-/* ---------- GAME OVER ---------- */
 function renderGameOver(){
   const t = game.stateT;
   const g = ctx.createLinearGradient(0,0,0,H);
@@ -3485,7 +3356,7 @@ function renderGameOver(){
   ctx.font = '700 26px "Arial Black", Arial, sans-serif';
   ctx.textAlign = 'center';
   ctx.fillStyle = '#ffb060';
-  ctx.fillText('Miya Bhai\'s journey ends at Chapter ' + (game.level+1), W/2, 330);
+  ctx.fillText("Miya Bhai's journey ends at Chapter " + (game.level+1), W/2, 330);
   ctx.font = '900 44px "Arial Black", Arial, sans-serif';
   ctx.fillStyle = '#ffd070';
   ctx.strokeStyle = '#000'; ctx.lineWidth = 7;
@@ -3499,26 +3370,20 @@ function renderGameOver(){
   bigText('PRESS  ENTER  TO  RETURN', W/2, 600, 30, ['#ffffff','#ffcf80'], blink, 1, '#000');
 }
 
-/* ---------- ENDING (Happy Return to Earth) ---------- */
 function renderEnding(){
   const t = game.stateT;
-  // warm peaceful sky
   const g = ctx.createLinearGradient(0,0,0,H);
   g.addColorStop(0,'#3a2a5a');
   g.addColorStop(0.35,'#c88a50');
   g.addColorStop(0.65,'#f0c070');
   g.addColorStop(1,'#8a5a2a');
   ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
-
-  // sun rising
   const sunGrd = ctx.createRadialGradient(640, 420, 20, 640, 420, 340);
   sunGrd.addColorStop(0, 'rgba(255,240,180,0.95)');
   sunGrd.addColorStop(0.4, 'rgba(255,200,100,0.6)');
   sunGrd.addColorStop(1, 'rgba(255,140,40,0)');
   ctx.fillStyle = sunGrd;
   ctx.fillRect(0,0,W,H);
-
-  // stars fading
   for(let i=0;i<40;i++){
     const sx = (i*173)%W;
     const sy = (i*61)%280;
@@ -3526,28 +3391,20 @@ function renderEnding(){
     ctx.fillStyle = 'rgba(255,255,220,'+a+')';
     ctx.beginPath(); ctx.arc(sx, sy, 1+(i%2), 0, 7); ctx.fill();
   }
-
-  // distant green hills
   ctx.fillStyle = '#3a5a30';
   ctx.beginPath();
   ctx.moveTo(0, GROUND);
-  for(let x=0;x<=W;x+=40){
+  for(let x=0;x<=W;x+=40)
     ctx.lineTo(x, GROUND - 60 - Math.sin(x*0.006)*40 - Math.sin(x*0.02)*15);
-  }
   ctx.lineTo(W, GROUND); ctx.closePath(); ctx.fill();
   ctx.fillStyle = '#2a4525';
   ctx.beginPath();
   ctx.moveTo(0, GROUND);
-  for(let x=0;x<=W;x+=30){
+  for(let x=0;x<=W;x+=30)
     ctx.lineTo(x, GROUND - 30 - Math.sin(x*0.008+2)*25);
-  }
   ctx.lineTo(W, GROUND); ctx.closePath(); ctx.fill();
-
-  // grass texture foreground
   ctx.fillStyle = '#1e3a18';
   ctx.fillRect(0, GROUND, W, H-GROUND);
-
-  // flowers/dots
   for(let i=0;i<50;i++){
     const fx = (i*173 + 40)%W;
     const fy = GROUND + 8 + (i*29)%(H-GROUND-8);
@@ -3556,8 +3413,6 @@ function renderEnding(){
     else ctx.fillStyle='#ffb0c0';
     ctx.beginPath(); ctx.arc(fx, fy, 2.5, 0, 7); ctx.fill();
   }
-
-  // Miya Bhai standing peaceful (arm raised in victory to the sky)
   const p = game.player;
   if(p){
     p.frozen = true;
@@ -3574,20 +3429,14 @@ function renderEnding(){
     ctx.restore();
   }
   Particles.draw(ctx);
-
-  // slow golden sparkles rising
   if(Math.random() < 0.4)
     Particles.spawn({ x:rand(0,W), y:GROUND+20,
       vx:rand(-20,20), vy:rand(-90,-40),
       life:rand(1.2,2.4), r:rand(2,4),
       color:'#fff0a0', gravity:-20, drag:0.98, kind:'spark', glow:true });
-
-  // Title
   const sc = 1 + Math.max(0, 1-t*1.5)*0.5;
   bigText('HE RETURNS HOME', W/2, 100, 60, ['#fff0a0','#ffb020'],
           Math.min(1, t*1.5), sc, '#3a1a00');
-
-  // Message
   if(t > 1.0){
     const a = Math.min(1, (t-1.0)*1.5);
     ctx.save();
@@ -3604,7 +3453,6 @@ function renderEnding(){
     ctx.strokeText(line2, W/2, 245); ctx.fillText(line2, W/2, 245);
     ctx.strokeText(line3, W/2, 280); ctx.fillText(line3, W/2, 280);
     ctx.strokeText(line4, W/2, 315); ctx.fillText(line4, W/2, 315);
-
     ctx.font = '900 36px "Arial Black", Arial, sans-serif';
     ctx.fillStyle = '#ffd070';
     ctx.strokeStyle = '#3a1a00'; ctx.lineWidth = 7;
@@ -3612,8 +3460,6 @@ function renderEnding(){
     ctx.fillText('MIYA BHAI  —  NO ONE CAN ESCAPE', W/2, 380);
     ctx.restore();
   }
-
-  // final score
   if(t > 2.0){
     const a = Math.min(1, (t-2.0)*1.5);
     ctx.save();
@@ -3626,7 +3472,6 @@ function renderEnding(){
     ctx.fillText('FINAL SCORE: ' + game.score, W/2, 460);
     ctx.restore();
   }
-
   if(t > 2.5){
     const blink = 0.5 + Math.abs(Math.sin(game.t*3))*0.5;
     bigText('PRESS ENTER TO PLAY AGAIN', W/2, H-80, 24,
@@ -3675,6 +3520,8 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 
+console.log('[MIYA BHAI] booting — canvas', cv.width + 'x' + cv.height,
+            '| viewport', window.innerWidth + 'x' + window.innerHeight);
 game.state = 'logo';
 game.t = 0;
 try{
